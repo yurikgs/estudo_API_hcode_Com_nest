@@ -1,5 +1,5 @@
 
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Param, Query } from '@nestjs/common';
 import { UserService } from './user.service';
 
 @Controller('users')
@@ -19,8 +19,12 @@ export class UserController {
   }
 
   @Get()
-  async showByEmail(@Query('email') email) {
+  async showByEmail(@Query('email') email: string) {
 
+    // if(!email) {
+    //   throw new BadRequestException('Email is required')
+    // }
+ 
     return this.userService.getByEmail(email)
 
   }
