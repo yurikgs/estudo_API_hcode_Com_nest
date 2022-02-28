@@ -1,5 +1,7 @@
-import { BadRequestException, Body, Controller, Get, Headers, NotFoundException, Post, Put, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, NotFoundException, Post, Put, Req, Res, StreamableFile, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { compareAsc, parse } from 'date-fns';
+import { createReadStream } from 'fs';
 import { User } from 'src/user/user.decorator';
 import { UserService } from 'src/user/user.service';
 import { Auth } from './auth.decorator';
@@ -111,5 +113,51 @@ export class AuthController {
   async forget(@Body('email') email) {
     
     return this.authService.recovery(email)
+  }
+
+  @Post('password-reset')
+  async resetPassword(@Body('password') password: string, @Body('token') token:string) {
+
+    try {
+      return this.authService.reset({password, token})
+    } catch (e) {
+      throw new BadRequestException(e.message)
+    }
+
+  }
+
+  @UseGuards(AuthGuard)
+  @UseInterceptors(FileInterceptor('file', {
+    dest: './storage/photos',
+    limits: {
+      fileSize: 5*1024*1024
+    }
+  }))
+  @Put('photo')
+  async setPhoto(@User() user, @UploadedFile() file: Express.Multer.File) {
+    
+    return this.userService.setPhoto(user.id, file)
+  }
+
+  @UseGuards(AuthGuard)
+  @Get('photo')
+  async getPhoto(@User('id') id, @Res({passthrough: true}) response){
+
+  const {file, extension} = await this.userService.getPhoto(id) 
+
+  switch (extension) {
+    case "png":
+      response.set({"Content-Type":"image/png"})
+      break;
+      
+      default:
+      response.set({"Content-Type":"image/jpeg"})
+      break;
+  }
+
+  return new StreamableFile(file)
+
+  
+
   }
 }

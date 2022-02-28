@@ -1,14 +1,18 @@
 import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
-import {Prisma, User} from '@prisma/client'
+import {Prisma} from '@prisma/client'
+import { MailService } from 'src/mail/mail.service';
+import { join } from 'path';
+import { createReadStream, existsSync, renameSync, unlinkSync } from 'fs';
 
 
 @Injectable()
 export class UserService { 
 
   constructor(
-    private prisma: PrismaService
+    private prisma: PrismaService,
+    private mailService: MailService
   ){}
 
   async get(id: number, hash = false){ //<-essa sintaxe(do hash) indica um argumento que será setado com um valor padrão, embora possa ou não ser alterado quando a função for chamada.
@@ -77,6 +81,7 @@ export class UserService {
      phone?:string;
      document?: string}) {
 
+      console.log(password)
       if(!name){
         throw new BadRequestException('Name is required')
       }
@@ -104,7 +109,7 @@ export class UserService {
         throw new BadRequestException("Email already exists!")
       } 
 
-      
+      console.log(password)
       const userCreated = await this.prisma.user.create({
           data: {
             person: {
@@ -116,7 +121,7 @@ export class UserService {
               },
             },
             email,
-            password: bcrypt.hashSync(password, 10),
+            password: bcrypt.hashSync(password, 10)
           },
           include: {
             person: true
@@ -133,12 +138,14 @@ export class UserService {
      email,
      birthAt,
      phone,
-     document
-  }:{name?:string;
-     email?:string;
-     birthAt?: Date;
-     phone?:string;
-     document?: string}) {
+     document,
+     photo
+  }:{name?:string,
+     email?:string,
+     birthAt?: Date,
+     phone?:string,
+     document?: string,
+     photo?: string}) {
 
       id = Number(id)
       if (isNaN(id)) {
@@ -163,6 +170,9 @@ export class UserService {
       }
       if(email) {
         dataUser.email = email
+      }
+      if(photo) {
+        dataUser.photo = photo
       }
       
       const user = await this.get(id)
@@ -216,7 +226,19 @@ export class UserService {
               person: true
             }
     })
+
     delete userUpdate.password
+
+    await this.mailService.send({
+      to: userUpdate.email,
+      subject: 'Senha Alterada Com Sucesso',
+      template: 'reset-password-confirm',
+      data: {
+        name: userUpdate.person.name
+      },
+
+    })
+
     return userUpdate
 
   }
@@ -229,5 +251,93 @@ export class UserService {
     await this.checkPassword(id, currentPassword)
 
     return this.updatePassword(id, newPassword)
+  }
+
+
+  getStoragePhotoPath(photo: string) {
+    if(!photo){
+      throw new BadRequestException('Photo is required!')
+    }
+
+    return     join(__dirname, "../","../", "../","storage", "photos", photo)
+  }
+
+  async removePhoto(userId: number) {
+
+    const {photo} = await this.get(userId)
+
+    if(photo) {
+
+    const currentPhoto = this.getStoragePhotoPath(photo)
+
+        if (existsSync(currentPhoto)) {
+            unlinkSync(currentPhoto)
+        }
+    }
+
+    return this.update(userId, {
+        photo: null
+    })
+
+  }
+
+  async setPhoto(id: number, file: Express.Multer.File) {
+
+    if(!['image/png', 'image/jpeg'].includes(file.mimetype)) {
+      throw new BadRequestException('Invalid File Type')
+    }
+
+
+
+    //Remove a foto atual se o usuário a possuir
+    await this.removePhoto(id)
+
+    // Renomeia o arquivo temporário com a extensão correta
+    let ext = ''
+    switch (file.mimetype) {
+      case 'image/png':
+        
+        ext = 'png'
+        break;
+
+      default:
+        ext = 'jpg'        
+        break;
+    }
+
+    const photo = `${file.filename}.${ext}`
+    const from =  this.getStoragePhotoPath(file.filename)
+    const to = this.getStoragePhotoPath(photo)
+    
+    
+    renameSync(from, to)
+
+    // Atualizar o registro da foto no banco de dados
+
+    return this.update(id, {
+      photo
+    })
+
+  }
+
+  async getPhoto(id: number, ){
+
+    const {photo} = await this.get(id)
+    
+    let filePath = this.getStoragePhotoPath('../no-photo.png')
+
+    if(photo) {
+      filePath = this.getStoragePhotoPath(photo)
+    }
+      const file = createReadStream(filePath)
+      const extension = filePath.split('.').pop()
+
+      return {
+        file,
+        extension
+    }
+
+
+
   }
 }

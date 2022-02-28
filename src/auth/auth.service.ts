@@ -1,5 +1,5 @@
 
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { MailService } from 'src/mail/mail.service';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -82,6 +82,50 @@ export class AuthService {
       })
       
       return { succes:true }
+
+  }
+
+  async reset({
+    password,
+    token
+  }:{
+    password: string,
+    token: string
+  })  {
+
+        if(!password){
+          throw new BadRequestException('Password is required!')
+        }
+
+        try {
+          await this.jwtService.verify(token)          
+        } catch (e) {
+          throw new BadRequestException('Invalid Token!')
+        }
+
+        const passwordRecovery = await this.prisma.passwordRecovery.findFirst({
+          where: {
+            token,
+            resetedAt:null  //Verificar
+          }
+        })
+
+        if(!passwordRecovery) {
+          throw new BadRequestException('Token have been used already')
+        }
+
+        await this.prisma.passwordRecovery.update({
+          where: {
+            id: passwordRecovery.id
+          },
+          data: {
+            resetedAt: new Date()
+          }
+        })
+
+        
+        
+        return await this.userService.updatePassword(passwordRecovery.userId, password)
 
   }
 

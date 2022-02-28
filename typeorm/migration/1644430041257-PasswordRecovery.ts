@@ -19,7 +19,7 @@ export class PasswordRecovery1644430041257 implements MigrationInterface {
                 name: 'userId',
                 type: 'int'
             },{
-                name: 'resetAt',
+                name: 'resetedAt',
                 type: 'datetime',
                 isNullable: true
             },{
